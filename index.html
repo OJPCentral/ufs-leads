@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1A2030">
 <title>UFS Leads Dashboard</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter','Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}</style>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter','Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+@media(max-width:480px){.header-filters{flex-wrap:wrap !important;gap:4px !important}.header-filters select{flex:1;min-width:80px}}
+@media(min-width:769px){.app-root{max-width:1280px;margin:0 auto}}</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.5/babel.min.js"></script>
@@ -309,9 +311,50 @@ function Dashboard({ user, onLogout }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => { (async () => { try { let all = []; let from = 0; const batch = 500; while (true) { const { data: rows, error } = await supabase.from("leads").select("*").order("id").range(from, from + batch - 1); if (error) throw error; if (!rows || rows.length === 0) break; all = [...all, ...rows]; if (rows.length < batch) break; from += batch; } setData(all.map(r => ({ id: r.id, name: r.name, owner: r.owner, stage: r.stage || "leads", source: r.source, segment: r.segment, alamat: r.alamat, kecamatan: r.kecamatan, contact: r.contact, noHP: r.no_hp || "", notes: r.notes, dateLeads: r.date_leads, dateProspect: r.date_prospect, dateCustomer: r.date_customer, lostAt: r.lost_at, coords: r.coords, geoLink: r.geo_link, orders: r.orders }))); } catch (e) { console.error(e); setData([]); } setDataLoaded(true); })(); }, []);
-  const saveToDb = async (lead) => { try { const row = { name: lead.name, owner: lead.owner, stage: lead.stage, source: lead.source, segment: lead.segment, alamat: lead.alamat, kecamatan: lead.kecamatan, contact: lead.contact, no_hp: lead.noHP, notes: lead.notes, date_leads: lead.dateLeads, date_prospect: lead.dateProspect, date_customer: lead.dateCustomer, lost_at: lead.lostAt, coords: lead.coords, geo_link: lead.geoLink, orders: lead.orders, updated_at: new Date().toISOString() }; if (lead.id) { await supabase.from("leads").update(row).eq("id", lead.id); } else { const { data: ins } = await supabase.from("leads").insert(row).select(); if (ins?.[0]) return ins[0].id; } setSaved(true); setTimeout(() => setSaved(false), 1500); } catch (e) { console.error(e); } };
 
-  const addLead = async (l) => { const nid = await saveToDb(l); setData(p => [...p, { ...l, id: nid || Date.now() }]); setShowQuickAdd(false); };
+  const refreshData = async () => {
+    try {
+      let all = []; let from = 0; const batch = 500;
+      while (true) {
+        const { data: rows, error } = await supabase.from("leads").select("*").order("id").range(from, from + batch - 1);
+        if (error) throw error;
+        if (!rows || rows.length === 0) break;
+        all = [...all, ...rows];
+        if (rows.length < batch) break;
+        from += batch;
+      }
+      setData(all.map(r => ({ id: r.id, name: r.name, owner: r.owner, stage: r.stage || "leads", source: r.source, segment: r.segment, alamat: r.alamat, kecamatan: r.kecamatan, contact: r.contact, noHP: r.no_hp || "", notes: r.notes, dateLeads: r.date_leads, dateProspect: r.date_prospect, dateCustomer: r.date_customer, lostAt: r.lost_at, coords: r.coords, geoLink: r.geo_link, orders: r.orders })));
+    } catch (e) { console.error("Refresh error:", e); }
+  };
+
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const interval = setInterval(refreshData, 30000);
+    const handleVisibility = () => { if (document.visibilityState === "visible") refreshData(); };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [dataLoaded]);
+  const saveToDb = async (lead) => {
+    try {
+      const row = { name: lead.name, owner: lead.owner, stage: lead.stage, source: lead.source, segment: lead.segment, alamat: lead.alamat, kecamatan: lead.kecamatan, contact: lead.contact, no_hp: lead.noHP || "", notes: lead.notes || "", date_leads: lead.dateLeads, date_prospect: lead.dateProspect || null, date_customer: lead.dateCustomer || null, lost_at: lead.lostAt || null, coords: lead.coords || null, geo_link: lead.geoLink || null, orders: lead.orders || null };
+      const isNew = !lead.id || typeof lead.id !== "number" || lead.id > 9000000000;
+      if (isNew) {
+        const { data: ins, error } = await supabase.from("leads").insert(row).select();
+        if (error) { console.error("Insert error:", error); return null; }
+        setSaved(true); setTimeout(() => setSaved(false), 1500);
+        setTimeout(refreshData, 500);
+        return ins?.[0]?.id || null;
+      } else {
+        const { error } = await supabase.from("leads").update(row).eq("id", lead.id);
+        if (error) { console.error("Update error:", error); return null; }
+        setSaved(true); setTimeout(() => setSaved(false), 1500);
+        setTimeout(refreshData, 500);
+        return lead.id;
+      }
+    } catch (e) { console.error("saveToDb error:", e); return null; }
+  };
+
+  const addLead = async (l) => { const nid = await saveToDb({ ...l, id: null }); setData(p => [...p, { ...l, id: nid || Date.now() }]); setShowQuickAdd(false); };
   const updateLead = (u) => { saveToDb(u); setData(p => p.map(l => l.id === u.id ? u : l)); };
 
   const searchGMaps = async () => {
@@ -381,11 +424,11 @@ function Dashboard({ user, onLogout }) {
   if (!dataLoaded) return <div style={{ fontFamily: "'Inter',sans-serif", background: "#F5F5F0", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#888", fontSize: 13 }}>Loading...</div></div>;
 
   return (
-    <div style={{ fontFamily: "'Inter','Segoe UI',sans-serif", background: "#F5F5F0", minHeight: "100vh", color: "#1A1A1A", maxWidth: 600, margin: "0 auto" }}>
+    <div className="app-root" style={{ fontFamily: "'Inter','Segoe UI',sans-serif", background: "#F5F5F0", minHeight: "100vh", color: "#1A1A1A" }}>
       <div style={{ background: "#1A2030", padding: "0 12px", position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}><img src={UFS_LOGO} alt="UFS" style={{ height: 36, borderRadius: 5 }} /><div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.3)" }} /><span style={{ color: "#fff", fontSize: 11, fontWeight: 600 }}>Region Central</span><span style={{ color: "#AAA", fontSize: 9, marginLeft: 4 }}>{user.name}</span></div>
-          <div style={{ display: "flex", gap: 4 }}><select value={filterOwner} onChange={e => { setFilterOwner(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All HC</option>{OWNERS.map(o => <option key={o}>{o}</option>)}</select><select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All Sources</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select><button onClick={onLogout} style={{ padding: "3px 6px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "#AAA", fontSize: 9, cursor: "pointer" }}>Logout</button><select value={filterChannel} onChange={e => { setFilterChannel(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All Channel</option>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></div>
+          <div className="header-filters" style={{ display: "flex", gap: 4 }}><select value={filterOwner} onChange={e => { setFilterOwner(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All HC</option>{OWNERS.map(o => <option key={o}>{o}</option>)}</select><select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All Sources</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select><button onClick={onLogout} style={{ padding: "3px 6px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "#AAA", fontSize: 9, cursor: "pointer" }}>Logout</button><select value={filterChannel} onChange={e => { setFilterChannel(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All Channel</option>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></div>
         </div>
       </div>
 
@@ -457,7 +500,7 @@ function Dashboard({ user, onLogout }) {
         </div>}
       </div>
 
-      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 600, background: "#1A2030", borderTop: "1px solid #2A3040", display: "flex", justifyContent: "space-around", alignItems: "center", height: 56, zIndex: 100 }}>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 1280, background: "#1A2030", borderTop: "1px solid #2A3040", display: "flex", justifyContent: "space-around", alignItems: "center", height: 56, zIndex: 100 }}>
         {[{ id: "dashboard", icon: "📊", label: "Home" }, { id: "table", icon: "📋", label: "Data" }, { id: "quickadd", icon: "+", label: "Add" }, { id: "find", icon: "🔍", label: "Find" }, { id: "chat", icon: "💬", label: "AI" }].map(item => { const active = item.id !== "quickadd" && tab === item.id; return <button key={item.id} onClick={() => item.id === "quickadd" ? (user.role === "hc" ? setShowQuickAdd(true) : null) : setTab(item.id)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", flex: 1 }}><div style={{ width: 28, height: 28, borderRadius: item.id === "quickadd" ? "50%" : 8, background: item.id === "quickadd" ? "#FF6B00" : active ? "rgba(255,107,0,0.15)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: item.id === "quickadd" ? "#fff" : active ? "#FF6B00" : "#fff" }}>{item.icon}</div><span style={{ fontSize: 9, fontWeight: 600, color: active ? "#FF6B00" : "#fff" }}>{item.label}</span></button>; })}
       </div>
 
