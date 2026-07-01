@@ -112,7 +112,16 @@ function Login({ onLogin }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { (async () => { const { data } = await supabase.from("users").select("*").order("name"); if (data) setUsers(data); setLoading(false); })(); }, []);
+  useEffect(() => { (async () => { const { data } = await supabase.from("users").select("*").order("name");
+    if (data) {
+      const rolePriority = { rbm: 1, abm: 2, adam: 3, hc: 4 };
+      setUsers(data.sort((a, b) => {
+        const pa = rolePriority[a.role] || 99;
+        const pb = rolePriority[b.role] || 99;
+        if (pa !== pb) return pa - pb;
+        return a.name.localeCompare(b.name);
+      }));
+    } setLoading(false); })(); }, []);
 
   const doLogin = () => {
     const u = users.find(x => x.name === sel);
@@ -163,9 +172,10 @@ const S = {
   dot: (c) => ({ width: 4, height: 14, background: c, borderRadius: 2 }),
 };
 
-function QuickAddModal({ onSave, onClose }) {
+function QuickAddModal({ onSave, onClose, user }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = useState({ name: "", contact: "", noHP: "", segment: "FSR Indo", alamat: "", kecamatan: "", owner: OWNERS[0], source: "Visit", notes: "" });
+  const defaultOwner = user && user.role === "hc" ? user.name : "";
+  const [form, setForm] = useState({ name: "", contact: "", noHP: "", segment: "FSR Indo", alamat: "", kecamatan: "", owner: defaultOwner, source: "Visit", notes: "" });
   const [locStatus, setLocStatus] = useState("idle");
   const [coords, setCoords] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -176,6 +186,7 @@ function QuickAddModal({ onSave, onClose }) {
   };
   const handleSubmit = () => {
     if (!form.name.trim()) return;
+    if (!form.owner) { alert("Pilih HC dulu"); return; }
     onSave({ id: Date.now(), ...form, name: form.name.trim(), stage: "leads", dateLeads: today, dateProspect: null, dateCustomer: null, lostAt: null, coords, geoLink: coords ? "https://www.google.com/maps?q=" + coords.lat + "," + coords.lng : null });
   };
   return (
@@ -207,11 +218,11 @@ function QuickAddModal({ onSave, onClose }) {
           <label><span style={S.label}>Channel</span><select value={form.segment} onChange={e => set("segment", e.target.value)} style={{ ...S.input, cursor: "pointer" }}>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></label>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-          <label><span style={S.label}>HC</span><select value={form.owner} onChange={e => set("owner", e.target.value)} style={{ ...S.input, cursor: "pointer" }}>{OWNERS.map(o => <option key={o}>{o}</option>)}</select></label>
+          <label><span style={S.label}>HC</span><select value={form.owner} onChange={e => set("owner", e.target.value)} style={{ ...S.input, cursor: "pointer" }}><option value="">-- Pilih HC --</option>{OWNERS.map(o => <option key={o} value={o}>{o}</option>)}</select></label>
           <label><span style={S.label}>Source</span><select value={form.source} onChange={e => set("source", e.target.value)} style={{ ...S.input, cursor: "pointer" }}>{SOURCES.map(s => <option key={s}>{s}</option>)}</select></label>
         </div>
         <label style={{ display: "block", marginBottom: 16 }}><span style={S.label}>Notes</span><textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} style={{ ...S.input, resize: "vertical" }} /></label>
-        <button onClick={handleSubmit} style={{ width: "100%", padding: 14, background: form.name.trim() ? "#FF6B00" : "#2A3050", color: form.name.trim() ? "#fff" : "#475569", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: form.name.trim() ? "pointer" : "default" }}>+ Tambah ke Leads</button>
+        <button onClick={handleSubmit} style={{ width: "100%", padding: 14, background: (form.name.trim() && form.owner) ? "#FF6B00" : "#2A3050", color: (form.name.trim() && form.owner) ? "#fff" : "#475569", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (form.name.trim() && form.owner) ? "pointer" : "default" }}>+ Tambah ke Leads</button>
       </div>
     </div>
   );
@@ -435,7 +446,7 @@ function Dashboard({ user, onLogout }) {
       <div style={{ background: "#1A2030", padding: "0 12px", position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}><img src={UFS_LOGO} alt="UFS" style={{ height: 36, borderRadius: 5 }} /><div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.3)" }} /><span style={{ color: "#fff", fontSize: 11, fontWeight: 600 }}>Region Central</span><span style={{ color: "#AAA", fontSize: 9, marginLeft: 4 }}>{user.name}</span></div>
-          <div className="header-filters" style={{ display: "flex", gap: 4 }}><select value={filterOwner} onChange={e => { setFilterOwner(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All HC</option>{OWNERS.map(o => <option key={o}>{o}</option>)}</select><select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All Sources</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select><button onClick={onLogout} style={{ padding: "3px 6px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "#AAA", fontSize: 9, cursor: "pointer" }}>Logout</button><select value={filterChannel} onChange={e => { setFilterChannel(e.target.value); setPage(0); }} style={{ padding: "5px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 10, cursor: "pointer" }}><option value="All">All Channel</option>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></div>
+          <div className="header-filters" style={{ display: "flex", gap: 4 }}><select value={filterOwner} onChange={e => { setFilterOwner(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 90 }}><option value="All">All HC</option>{OWNERS.map(o => <option key={o}>{o}</option>)}</select><select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 80 }}><option value="All">All Sources</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select><button onClick={onLogout} style={{ padding: "3px 6px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "#AAA", fontSize: 8, cursor: "pointer" }}>Logout</button><select value={filterChannel} onChange={e => { setFilterChannel(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 85 }}><option value="All">All Channel</option>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></div>
         </div>
       </div>
 
@@ -508,10 +519,10 @@ function Dashboard({ user, onLogout }) {
       </div>
 
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 1280, background: "#1A2030", borderTop: "1px solid #2A3040", display: "flex", justifyContent: "space-around", alignItems: "center", height: 56, zIndex: 100 }}>
-        {[{ id: "dashboard", icon: "📊", label: "Home" }, { id: "table", icon: "📋", label: "Data" }, { id: "quickadd", icon: "+", label: "Add" }, { id: "find", icon: "🔍", label: "Find" }, { id: "chat", icon: "💬", label: "AI" }].map(item => { const active = item.id !== "quickadd" && tab === item.id; return <button key={item.id} onClick={() => item.id === "quickadd" ? (user.role === "hc" ? setShowQuickAdd(true) : null) : setTab(item.id)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", flex: 1 }}><div style={{ width: 28, height: 28, borderRadius: item.id === "quickadd" ? "50%" : 8, background: item.id === "quickadd" ? "#FF6B00" : active ? "rgba(255,107,0,0.15)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: item.id === "quickadd" ? "#fff" : active ? "#FF6B00" : "#fff" }}>{item.icon}</div><span style={{ fontSize: 9, fontWeight: 600, color: active ? "#FF6B00" : "#fff" }}>{item.label}</span></button>; })}
+        {[{ id: "dashboard", icon: "📊", label: "Home" }, { id: "table", icon: "📋", label: "Data" }, { id: "quickadd", icon: "+", label: "Add" }, { id: "find", icon: "🔍", label: "Find" }, { id: "chat", icon: "💬", label: "AI" }].map(item => { const active = item.id !== "quickadd" && tab === item.id; return <button key={item.id} onClick={() => item.id === "quickadd" ? setShowQuickAdd(true) : setTab(item.id)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", flex: 1 }}><div style={{ width: 28, height: 28, borderRadius: item.id === "quickadd" ? "50%" : 8, background: item.id === "quickadd" ? "#FF6B00" : active ? "rgba(255,107,0,0.15)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: item.id === "quickadd" ? "#fff" : active ? "#FF6B00" : "#fff" }}>{item.icon}</div><span style={{ fontSize: 9, fontWeight: 600, color: active ? "#FF6B00" : "#fff" }}>{item.label}</span></button>; })}
       </div>
 
-      {showQuickAdd && <QuickAddModal onSave={addLead} onClose={() => setShowQuickAdd(false)} />}
+      {showQuickAdd && <QuickAddModal onSave={addLead} onClose={() => setShowQuickAdd(false)} user={user} />}
       {editLead && <EditLeadModal lead={editLead} onSave={updateLead} onClose={() => setEditLead(null)} />}
     </div>
   );
