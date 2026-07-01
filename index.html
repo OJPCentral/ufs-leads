@@ -233,6 +233,17 @@ function EditLeadModal({ lead, onSave, onClose }) {
   const [form, setForm] = useState({ ...lead });
   const [pendingStage, setPendingStage] = useState(null);
   const [skuSelect, setSkuSelect] = useState("");
+  const [locStatus, setLocStatus] = useState("idle");
+  const detectLocation = () => {
+    if (!navigator.geolocation) { setLocStatus("error"); return; }
+    setLocStatus("loading");
+    navigator.geolocation.getCurrentPosition(p => {
+      const lat = p.coords.latitude.toFixed(6);
+      const lng = p.coords.longitude.toFixed(6);
+      setForm(f => ({ ...f, coords: { lat, lng }, geoLink: "https://www.google.com/maps?q=" + lat + "," + lng }));
+      setLocStatus("done");
+    }, () => setLocStatus("error"), { enableHighAccuracy: true, timeout: 10000 });
+  };
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const applyStage = (ns) => {
     const u = { stage: ns };
@@ -263,9 +274,13 @@ function EditLeadModal({ lead, onSave, onClose }) {
         <label style={{ display: "block", marginBottom: 10 }}><span style={S.label}>Notes</span><textarea value={form.notes || ""} onChange={e => set("notes", e.target.value)} rows={2} style={{ ...S.input, resize: "vertical" }} /></label>
         <div style={{ marginBottom: 10 }}>
           <span style={S.label}>Lokasi GPS</span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+            <button onClick={detectLocation} type="button" style={{ padding: "7px 12px", background: locStatus === "done" ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)", color: locStatus === "done" ? "#34D399" : "#FBBF24", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{locStatus === "idle" ? "Auto Detect" : locStatus === "loading" ? "..." : locStatus === "done" ? "Done" : "Retry"}</button>
+            {form.coords?.lat && form.coords?.lng && <a href={"https://www.google.com/maps?q=" + form.coords.lat + "," + form.coords.lng} target="_blank" rel="noopener" style={{ fontSize: 10, color: "#38BDF8", textDecoration: "none" }}>Buka Maps</a>}
+          </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-            <input placeholder="Latitude" value={form.coords?.lat || ""} onChange={e => set("coords", { ...(form.coords || {}), lat: e.target.value })} style={{ ...S.input, flex: 1, fontSize: 11 }} />
-            <input placeholder="Longitude" value={form.coords?.lng || ""} onChange={e => set("coords", { ...(form.coords || {}), lng: e.target.value })} style={{ ...S.input, flex: 1, fontSize: 11 }} />
+            <input placeholder="Latitude" value={form.coords?.lat || ""} onChange={e => { const lat = e.target.value; const lng = form.coords?.lng || ""; setForm(f => ({ ...f, coords: { ...(f.coords || {}), lat }, geoLink: (lat && lng) ? "https://www.google.com/maps?q=" + lat + "," + lng : f.geoLink })); }} style={{ ...S.input, flex: 1, fontSize: 11 }} />
+            <input placeholder="Longitude" value={form.coords?.lng || ""} onChange={e => { const lng = e.target.value; const lat = form.coords?.lat || ""; setForm(f => ({ ...f, coords: { ...(f.coords || {}), lng }, geoLink: (lat && lng) ? "https://www.google.com/maps?q=" + lat + "," + lng : f.geoLink })); }} style={{ ...S.input, flex: 1, fontSize: 11 }} />
           </div>
           {form.coords?.lat && form.coords?.lng && <a href={"https://www.google.com/maps?q=" + form.coords.lat + "," + form.coords.lng} target="_blank" rel="noopener" style={{ fontSize: 10, color: "#FF6B00" }}>Buka Maps</a>}
         </div>
@@ -299,6 +314,8 @@ function Dashboard({ user, onLogout }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [filterOwner, setFilterOwner] = useState([]);
   const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const [hcSortCol, setHcSortCol] = useState("conv");
+  const [hcSortDir, setHcSortDir] = useState("desc");
   const [filterSource, setFilterSource] = useState("All");
   const [filterChannel, setFilterChannel] = useState("All");
   const [filterPeriod, setFilterPeriod] = useState("all");
@@ -432,7 +449,18 @@ function Dashboard({ user, onLogout }) {
   const overallConv = totalLeads > 0 ? ((totalCustomers / totalLeads) * 100).toFixed(1) : "0";
   const velocities = filtered.filter(l => l.dateProspect && l.dateCustomer).map(l => diffWeeks(l.dateProspect, l.dateCustomer));
   const avgVelocity = velocities.length > 0 ? Math.round(velocities.reduce((a, b) => a + b, 0) / velocities.length) : "-";
-  const ownerStats = OWNERS.map(ow => { const ol = filtered.filter(l => l.owner === ow); return { owner: ow, total: ol.length, prospect: ol.filter(l => { if (l.stage === "lost") return (stageOrder[l.lostAt] ?? -1) >= stageOrder["prospect"]; return stageOrder[l.stage] >= stageOrder["prospect"]; }).length, cust: ol.filter(l => l.stage === "customer").length, lost: ol.filter(isValidLost).length, conv: ol.length > 0 ? ((ol.filter(l => l.stage === "customer").length / ol.length) * 100).toFixed(1) : "0", vel: (() => { const v = ol.filter(l => l.dateProspect && l.dateCustomer).map(l => diffWeeks(l.dateProspect, l.dateCustomer)); return v.length > 0 ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : "-"; })() }; }).sort((a, b) => parseFloat(b.conv) - parseFloat(a.conv));
+  const shownOwners = filterOwner.length > 0 ? filterOwner : OWNERS;
+  const ownerStats = shownOwners.map(ow => { const ol = filtered.filter(l => l.owner === ow); return { owner: ow, total: ol.length, prospect: ol.filter(l => { if (l.stage === "lost") return (stageOrder[l.lostAt] ?? -1) >= stageOrder["prospect"]; return stageOrder[l.stage] >= stageOrder["prospect"]; }).length, cust: ol.filter(l => l.stage === "customer").length, lost: ol.filter(isValidLost).length, conv: ol.length > 0 ? ((ol.filter(l => l.stage === "customer").length / ol.length) * 100).toFixed(1) : "0", vel: (() => { const v = ol.filter(l => l.dateProspect && l.dateCustomer).map(l => diffWeeks(l.dateProspect, l.dateCustomer)); return v.length > 0 ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : "-"; })() }; }).sort((a, b) => {
+    const dir = hcSortDir === "asc" ? 1 : -1;
+    if (hcSortCol === "owner") return a.owner.localeCompare(b.owner) * dir;
+    if (hcSortCol === "total") return (a.total - b.total) * dir;
+    if (hcSortCol === "prospect") return (a.prospect - b.prospect) * dir;
+    if (hcSortCol === "cust") return (a.cust - b.cust) * dir;
+    if (hcSortCol === "lost") return (a.lost - b.lost) * dir;
+    if (hcSortCol === "conv") return (parseFloat(a.conv) - parseFloat(b.conv)) * dir;
+    if (hcSortCol === "vel") { const av = a.vel === "-" ? 999 : a.vel; const bv = b.vel === "-" ? 999 : b.vel; return (av - bv) * dir; }
+    return 0;
+  });
   const lostAnalysis = (() => { const m = {}; filtered.filter(isValidLost).forEach(l => { m[l.lostAt] = (m[l.lostAt] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); })();
   const doorOpener = (() => { const m = {}; const detail = {}; let totalVal = 0, totalKarton = 0, totalSatuan = 0, valKarton = 0, valSatuan = 0, totalQty = 0; filtered.filter(l => l.stage === "customer").forEach(l => { if (l.orders && l.orders.length > 0) { l.orders.forEach(o => { if (!detail[o.sku]) detail[o.sku] = { cs: 0, pcs: 0, valCs: 0, valPcs: 0 }; m[o.sku] = (m[o.sku] || 0) + o.qty; totalVal += o.total; totalQty += o.qty; if (o.unit === "karton") { totalKarton += o.qty; valKarton += o.total; detail[o.sku].cs += o.qty; detail[o.sku].valCs += o.total; } else { totalSatuan += o.qty; valSatuan += o.total; detail[o.sku].pcs += o.qty; detail[o.sku].valPcs += o.total; } }); } else if (l.firstSKU) { if (!detail[l.firstSKU]) detail[l.firstSKU] = { cs: 0, pcs: 0, valCs: 0, valPcs: 0 }; m[l.firstSKU] = (m[l.firstSKU] || 0) + 1; totalQty += 1; totalSatuan += 1; detail[l.firstSKU].pcs += 1; } }); const entries = Object.entries(m).map(([s, c]) => ({ sku: s, count: c, pct: totalQty > 0 ? ((c / totalQty) * 100).toFixed(1) : "0", ...(detail[s] || {}) })).sort((a, b) => b.count - a.count); return { items: entries, totalVal, totalQty, totalKarton, totalSatuan, valKarton, valSatuan }; })();
   const searched = searchQ ? filtered.filter(l => [l.name, l.owner, l.alamat].some(f => (f || "").toLowerCase().includes(searchQ.toLowerCase()))) : filtered;
@@ -489,7 +517,7 @@ function Dashboard({ user, onLogout }) {
           <div style={{ ...S.card, marginBottom: 12 }}>
             <div style={S.title}><span style={S.dot("#FF6B00")} />Conversion Funnel</div>
             <div style={{ fontSize: 10, color: "#888", marginBottom: 10 }}>Jumlah lead yang melewati setiap stage</div>
-            {activeStages.map((stg, i) => { const st = stageMap[stg]; const pct = totalLeads > 0 ? (funnelCounts[i] / totalLeads * 100) : 0; const cr = i > 0 && funnelCounts[i - 1] > 0 ? ((funnelCounts[i] / funnelCounts[i - 1]) * 100).toFixed(0) : null; const cc = cr ? (parseFloat(cr) >= 75 ? "#34D399" : parseFloat(cr) >= 50 ? "#FBBF24" : "#F87171") : null; const drop = i > 0 ? funnelCounts[i - 1] - funnelCounts[i] : 0; return (<div key={stg} style={{ marginBottom: 6 }}>{cr && <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "4px 0 4px 70px" }}><span style={{ fontSize: 10, fontWeight: 700, color: cc }}>{cr}% convert</span>{drop > 0 && <span style={{ fontSize: 9, color: "#F87171" }}>({drop} drop)</span>}</div>}<div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 70, fontSize: 11, fontWeight: 700 }}>{st.label}</div><div style={{ flex: 1, height: 24, background: "#F0F0EC", borderRadius: 4, overflow: "hidden", position: "relative" }}><div style={{ height: "100%", width: Math.max(pct, 0) + "%", background: st.color, borderRadius: 4, opacity: 0.85 }} /></div><div style={{ width: 55, textAlign: "right" }}><span style={{ fontSize: 14, fontWeight: 800, color: st.color }}>{funnelCounts[i]}</span><span style={{ fontSize: 9, color: "#AAA", marginLeft: 2 }}>{pct.toFixed(0)}%</span></div></div></div>); })}
+            {activeStages.map((stg, i) => { const st = stageMap[stg]; const pct = totalLeads > 0 ? (funnelCounts[i] / totalLeads * 100) : 0; const cr = i > 0 && funnelCounts[i - 1] > 0 ? ((funnelCounts[i] / funnelCounts[i - 1]) * 100).toFixed(0) : null; const cc = cr ? (parseFloat(cr) >= 75 ? "#34D399" : parseFloat(cr) >= 50 ? "#FBBF24" : "#F87171") : null; const drop = i > 0 ? funnelCounts[i - 1] - funnelCounts[i] : 0; return (<div key={stg} style={{ marginBottom: 6 }}>{cr && <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "4px 0 4px 70px" }}><span style={{ fontSize: 10, fontWeight: 700, color: cc }}>{cr}% convert</span>{drop > 0 && <span style={{ fontSize: 9, color: "#F87171" }}>({drop} drop)</span>}</div>}<div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 70, fontSize: 11, fontWeight: 700 }}>{st.label}</div><div style={{ flex: 1, height: 24, background: "#F0F0EC", borderRadius: 4, overflow: "hidden", position: "relative" }}><div style={{ height: "100%", width: Math.max(pct, 0) + "%", background: st.color, borderRadius: 4, opacity: 0.85 }} /></div><div style={{ width: 55, textAlign: "right" }}><span style={{ fontSize: 15, fontWeight: 800, color: st.color }}>{funnelCounts[i]}</span><span style={{ fontSize: 9, color: "#B8B8B0", marginLeft: 10, fontWeight: 500 }}>· {pct.toFixed(0)}%</span></div></div></div>); })}
             <div style={{ marginTop: 10, padding: "10px 12px", background: "#F8F8F4", borderRadius: 8 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div><div style={{ fontSize: 9, color: "#888", textTransform: "uppercase" }}>Win Rate</div><div style={{ fontSize: 16, fontWeight: 800, color: "#34D399" }}>{overallConv}%</div></div><div><div style={{ fontSize: 9, color: "#888", textTransform: "uppercase" }}>Loss Rate</div><div style={{ fontSize: 16, fontWeight: 800, color: "#F87171" }}>{totalLeads > 0 ? ((lostCount / totalLeads) * 100).toFixed(1) : 0}%</div></div><div><div style={{ fontSize: 9, color: "#888", textTransform: "uppercase" }}>Active</div><div style={{ fontSize: 16, fontWeight: 800, color: "#FF6B00" }}>{filtered.filter(l => !["customer", "lost"].includes(l.stage)).length}</div></div></div></div>
           </div>
           {doorOpener.items.length > 0 && <div style={{ ...S.card, marginBottom: 12 }}>
@@ -499,7 +527,7 @@ function Dashboard({ user, onLogout }) {
           </div>}
           <div style={{ ...S.card, marginBottom: 12, overflowX: "auto" }}>
             <div style={S.title}><span style={S.dot("#38BDF8")} />Horeca Consultant</div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}><thead><tr style={{ borderBottom: "1px solid #E8E8E4" }}>{["Name", "Leads", "Prospect", "Cust", "Lost", "Conv", "Vel"].map(h => <th key={h} style={{ padding: "6px 4px", fontWeight: 600, color: "#AAA", textTransform: "uppercase", fontSize: 9, textAlign: h === "Name" ? "left" : "center" }}>{h}</th>)}</tr></thead><tbody>{ownerStats.map((o, i) => <tr key={o.owner} style={{ borderBottom: "1px solid #F0F0EC", background: i % 2 ? "#FAFAF6" : "transparent" }}><td style={{ padding: "8px 4px", fontWeight: 600 }}>{o.owner}</td><td style={{ textAlign: "center", color: "#666" }}>{o.total}</td><td style={{ textAlign: "center", color: "#FBBF24", fontWeight: 700 }}>{o.prospect}</td><td style={{ textAlign: "center", color: "#34D399", fontWeight: 700 }}>{o.cust}</td><td style={{ textAlign: "center", color: "#F87171" }}>{o.lost}</td><td style={{ textAlign: "center", fontWeight: 700, color: parseFloat(o.conv) >= 30 ? "#34D399" : parseFloat(o.conv) >= 15 ? "#FBBF24" : "#F87171" }}>{o.conv}%</td><td style={{ textAlign: "center", color: "#38BDF8" }}>{o.vel === "-" ? "-" : o.vel + "w"}</td></tr>)}</tbody></table>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}><thead><tr style={{ borderBottom: "1px solid #E8E8E4" }}>{[{ k: "owner", l: "Name" }, { k: "total", l: "Leads" }, { k: "prospect", l: "Prospect" }, { k: "cust", l: "Cust" }, { k: "lost", l: "Lost" }, { k: "conv", l: "Conv" }, { k: "vel", l: "Vel" }].map(h => <th key={h.k} onClick={() => { if (hcSortCol === h.k) setHcSortDir(hcSortDir === "asc" ? "desc" : "asc"); else { setHcSortCol(h.k); setHcSortDir("desc"); } }} style={{ padding: "6px 4px", fontWeight: 600, color: hcSortCol === h.k ? "#FF6B00" : "#AAA", textTransform: "uppercase", fontSize: 9, textAlign: h.k === "owner" ? "left" : "center", cursor: "pointer", userSelect: "none" }}>{h.l}{hcSortCol === h.k && (hcSortDir === "asc" ? " ↑" : " ↓")}</th>)}</tr></thead><tbody>{ownerStats.map((o, i) => <tr key={o.owner} style={{ borderBottom: "1px solid #F0F0EC", background: i % 2 ? "#FAFAF6" : "transparent" }}><td style={{ padding: "8px 4px", fontWeight: 600 }}>{o.owner}</td><td style={{ textAlign: "center", color: "#666" }}>{o.total}</td><td style={{ textAlign: "center", color: "#FBBF24", fontWeight: 700 }}>{o.prospect}</td><td style={{ textAlign: "center", color: "#34D399", fontWeight: 700 }}>{o.cust}</td><td style={{ textAlign: "center", color: "#F87171" }}>{o.lost}</td><td style={{ textAlign: "center", fontWeight: 700, color: parseFloat(o.conv) >= 30 ? "#34D399" : parseFloat(o.conv) >= 15 ? "#FBBF24" : "#F87171" }}>{o.conv}%</td><td style={{ textAlign: "center", color: "#38BDF8" }}>{o.vel === "-" ? "-" : o.vel + "w"}</td></tr>)}</tbody></table>
           </div>
           <div style={{ ...S.card, marginBottom: 12 }}>
             <div style={S.title}><span style={S.dot("#F87171")} />Lost Analysis</div>
