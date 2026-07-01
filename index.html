@@ -297,7 +297,8 @@ function EditLeadModal({ lead, onSave, onClose }) {
 function Dashboard({ user, onLogout }) {
   const [data, setData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [filterOwner, setFilterOwner] = useState("All");
+  const [filterOwner, setFilterOwner] = useState([]);
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
   const [filterSource, setFilterSource] = useState("All");
   const [filterChannel, setFilterChannel] = useState("All");
   const [filterPeriod, setFilterPeriod] = useState("all");
@@ -421,7 +422,7 @@ function Dashboard({ user, onLogout }) {
     return { from: null, to: null };
   };
   const periodRange = getPeriodRange(filterPeriod);
-  const filtered = data.filter(l => (filterOwner === "All" || l.owner === filterOwner) && (filterSource === "All" || l.source === filterSource) && (filterChannel === "All" || l.segment === filterChannel) && (filterPeriod === "all" || (l.dateLeads >= (periodRange.from || "") && (!periodRange.to || l.dateLeads <= periodRange.to))));
+  const filtered = data.filter(l => (filterOwner.length === 0 || filterOwner.includes(l.owner)) && (filterSource === "All" || l.source === filterSource) && (filterChannel === "All" || l.segment === filterChannel) && (filterPeriod === "all" || (l.dateLeads >= (periodRange.from || "") && (!periodRange.to || l.dateLeads <= periodRange.to))));
   const activeStages = ["leads", "prospect", "visit", "customer"];
   const stageOrder = { leads: 0, prospect: 1, visit: 2, customer: 3, lost: -1 };
   const funnelCounts = activeStages.map((s, i) => { const idx = stageOrder[s]; return filtered.filter(l => { if (l.stage === "lost") return (stageOrder[l.lostAt] ?? -1) >= idx; return stageOrder[l.stage] >= idx; }).length; });
@@ -446,7 +447,25 @@ function Dashboard({ user, onLogout }) {
       <div style={{ background: "#1A2030", padding: "0 12px", position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}><img src={UFS_LOGO} alt="UFS" style={{ height: 36, borderRadius: 5 }} /><div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.3)" }} /><span style={{ color: "#fff", fontSize: 11, fontWeight: 600 }}>Region Central</span><span style={{ color: "#AAA", fontSize: 9, marginLeft: 4 }}>{user.name}</span></div>
-          <div className="header-filters" style={{ display: "flex", gap: 4 }}><select value={filterOwner} onChange={e => { setFilterOwner(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 90 }}><option value="All">All HC</option>{OWNERS.map(o => <option key={o}>{o}</option>)}</select><select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 80 }}><option value="All">All Sources</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select><button onClick={onLogout} style={{ padding: "3px 6px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "#AAA", fontSize: 8, cursor: "pointer" }}>Logout</button><select value={filterChannel} onChange={e => { setFilterChannel(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 85 }}><option value="All">All Channel</option>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></div>
+          <div className="header-filters" style={{ display: "flex", gap: 4 }}><div style={{ position: "relative", display: "inline-block" }}>
+              <button onClick={() => setShowOwnerDropdown(!showOwnerDropdown)} style={{ padding: "4px 8px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 100, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {filterOwner.length === 0 ? "All HC" : filterOwner.length === 1 ? filterOwner[0] : filterOwner.length + " HC"} ▾
+              </button>
+              {showOwnerDropdown && <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", zIndex: 100, minWidth: 200, maxHeight: 320, overflowY: "auto" }}>
+                <div style={{ padding: "6px 10px", borderBottom: "1px solid #E8E8E4", display: "flex", justifyContent: "space-between", background: "#F9F9F7" }}>
+                  <button onClick={() => { setFilterOwner([]); setPage(0); }} style={{ background: "transparent", border: "none", color: "#FF6B00", fontSize: 9, cursor: "pointer", fontWeight: 600 }}>Clear</button>
+                  <button onClick={() => { setFilterOwner([...OWNERS]); setPage(0); }} style={{ background: "transparent", border: "none", color: "#1A1A1A", fontSize: 9, cursor: "pointer" }}>Select All</button>
+                  <button onClick={() => setShowOwnerDropdown(false)} style={{ background: "transparent", border: "none", color: "#666", fontSize: 9, cursor: "pointer" }}>Close</button>
+                </div>
+                {OWNERS.map(o => {
+                  const checked = filterOwner.includes(o);
+                  return <label key={o} style={{ display: "flex", alignItems: "center", padding: "5px 10px", cursor: "pointer", fontSize: 10, borderBottom: "1px solid #F0F0EC" }}>
+                    <input type="checkbox" checked={checked} onChange={() => { const next = checked ? filterOwner.filter(x => x !== o) : [...filterOwner, o]; setFilterOwner(next); setPage(0); }} style={{ marginRight: 6, cursor: "pointer" }} />
+                    {o}
+                  </label>;
+                })}
+              </div>}
+            </div><select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 80 }}><option value="All">All Sources</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select><button onClick={onLogout} style={{ padding: "3px 6px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "#AAA", fontSize: 8, cursor: "pointer" }}>Logout</button><select value={filterChannel} onChange={e => { setFilterChannel(e.target.value); setPage(0); }} style={{ padding: "4px 6px", background: "#fff", border: "1px solid #E8E8E4", borderRadius: 6, color: "#1A1A1A", fontSize: 9, cursor: "pointer", maxWidth: 85 }}><option value="All">All Channel</option>{SEGMENTS.map(s => <option key={s}>{s}</option>)}</select></div>
         </div>
       </div>
 
